@@ -1,0 +1,155 @@
+<!DOCTYPE html><html lang="ml"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Malayalam Infinite Calendar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Malayalam:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style>
+html,body{height:100%}
+body{font-family:'Noto Sans Malayalam',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;touch-action:pan-y;overscroll-behavior-x:contain}
+:root{--cellFontMin:1rem;--cellFontMax:2.25rem}
+@media (max-width:640px){:root{--cellFontMin:.95rem;--cellFontMax:1.6rem}}
+@media (min-width:1024px){:root{--cellFontMin:1.2rem;--cellFontMax:2.6rem}}
+.center-num{font-size:clamp(var(--cellFontMin),3vw,var(--cellFontMax))}
+.corner-text{font-size:clamp(.65rem,1.4vw,.9rem)}
+</style>
+</head>
+<body class="bg-neutral-50 text-neutral-900">
+<div class="min-h-dvh flex flex-col">
+<header class="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap gap-2 items-center justify-between">
+    <div class="flex items-center gap-3">
+      <h1 class="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold tracking-tight">മലയാളം കലണ്ടർ</h1>
+      <span id="gregRange" class="text-xs sm:text-sm md:text-base text-neutral-600"></span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="prev" class="px-3 py-2 rounded-xl border hover:bg-neutral-100 active:scale-[.98]">◀</button>
+      <button id="next" class="px-3 py-2 rounded-xl border hover:bg-neutral-100 active:scale-[.98]">▶</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <select id="weekStart" class="px-3 py-2 rounded-xl border text-xs sm:text-sm md:text-base">
+        <option value="0">Week starts: Sun</option><option value="1">Week starts: Mon</option>
+      </select>
+      <label class="flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer text-xs sm:text-sm md:text-base">
+        <input id="useMalayalamDigits" type="checkbox" class="size-4" checked><span>ML digits</span>
+      </label>
+    </div>
+  </div>
+</header>
+
+<main class="flex-1">
+  <div class="max-w-6xl mx-auto px-4 py-6">
+    <div class="mb-4 flex flex-wrap items-end gap-3">
+      <div class="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-semibold flex items-center gap-3">
+        <span id="mlMonthName"></span><span id="mlYear" class="text-neutral-500"></span>
+      </div>
+      <div class="text-xs sm:text-sm md:text-base text-neutral-600" id="subLabel"></div>
+    </div>
+    <div id="weekdayHead" class="grid grid-cols-7 gap-1 sm:gap-2 mb-2 text-center font-medium text-neutral-600 text-[10px] sm:text-xs md:text-sm lg:text-base"></div>
+    <div id="grid" class="grid grid-cols-7 gap-1 sm:gap-2"></div>
+  </div>
+</main>
+
+<footer class="border-t bg-white/70">
+  <div class="max-w-6xl mx-auto px-4 py-4 text-xs sm:text-sm md:text-base text-neutral-600 flex flex-wrap items-center justify-between gap-2">
+    <div>Locale: Asia/Chennai</div><div>Navigate with ◀ ▶ or swipe</div>
+  </div>
+</footer>
+</div>
+
+<script>
+const ML_MONTHS=["ചിങ്ങം","കന്നി","തുലാം","വൃശ്ചികം","ധനു","മകരം","കുംഭം","മീനം","മേടം","ഇടവം","മിഥുനം","കർക്കടകം"]
+const ML_DIGITS=['൦','൧','൨','൩','൪','൫','൬','൭','൮','൯']
+const MONTH_LENGTHS=[31,31,31,31,31,30,30,30,30,30,31,31]
+const ML_WEEK=["ഞാ","തി","ചൊ","ബു","വ്യാ","വെ","ശ"]
+const S=(q)=>document.querySelector(q)
+const today=new Date()
+const toML=(n)=>String(n).replace(/\d/g,d=>ML_DIGITS[d])
+const fmtEnShort=(d)=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+const fmtEnRange=(a,b)=>{const A=a.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});const B=new Date(b.getTime()-86400000).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});return A+" – "+B}
+const sameDate=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()
+
+function jdFromUTC(dt){const y=dt.getUTCFullYear(),m=dt.getUTCMonth()+1,D=dt.getUTCDate()+(dt.getUTCHours()/24)+(dt.getUTCMinutes()/1440)+(dt.getUTCSeconds()/86400);const a=Math.floor((14-m)/12);const Y=y+4800-a;const M=m+12*a-3;return Math.floor((1461*Y)/4)+Math.floor((153*M+2)/5)+Math.floor(D)-32075+(D-Math.floor(D))-0.5}
+function sunTrueLongitude(jd){const T=(jd-2451545)/36525;let L0=280.46646+36000.76983*T+0.0003032*T*T;L0=((L0%360)+360)%360;let M=357.52911+35999.05029*T-0.0001537*T*T;M=((M%360)+360)%360;const Mr=M*Math.PI/180;let C=(1.914602-0.004817*T-0.000014*T*T)*Math.sin(Mr);C+=(0.019993-0.000101*T)*Math.sin(2*Mr)+0.000289*Math.sin(3*Mr);const L=L0+C;return((L%360)+360)%360}
+function chingamStartDayAD(y){const target=145.0;let pv=null,pjd=null;for(let d=16;d<=19;d++){for(let h=0;h<24;h++){const dt=new Date(Date.UTC(y,7,d,h,0,0));const jd=jdFromUTC(dt);const L=sunTrueLongitude(jd);let diff=L-target;diff=((diff+540)%360)-180;if(pv!==null&&((diff===0)||((diff>0)!==(pv>0)))){let lo=pjd,hi=jd;for(let i=0;i<20;i++){const mid=(lo+hi)/2;const Lm=sunTrueLongitude(mid);let dm=((Lm-target+540)%360)-180;if((dm>0)===(pv>0)){lo=mid}else{hi=mid}}const c=(lo+hi)/2;const J=c+0.5;const Z=Math.floor(J),F=J-Z;let A=Z;const alpha=Math.floor((Z-1867216.25)/36524.25);if(Z>=2299161)A=Z+1+alpha-Math.floor(alpha/4);const B=A+1524;const Cc=Math.floor((B-122.1)/365.25);const Dd=Math.floor(365.25*Cc);const Ee=Math.floor((B-Dd)/30.6001);const dF=B-Dd-Math.floor(30.6001*Ee)+F;const m=(Ee<14)?Ee-1:Ee-13;const Y=(m>2)?Cc-4716:Cc-4715;const fr=dF-Math.floor(dF);const H=Math.floor(fr*24);const N=Math.floor((fr*24-H)*60);const Sx=Math.floor((((fr*24-H)*60)-N)*60);const utc=Date.UTC(Y,m-1,Math.floor(dF),H,N,Sx);const ist=new Date(utc+5.5*3600*1000);const mm=ist.getMonth(),dd=ist.getDate();return(mm===7)?dd:17}pv=diff;pjd=jd}}return 17}
+function chingamStartForKYear(k){const baseAD=k+825;const d=chingamStartDayAD(baseAD);return{baseAD,day:d,isDrift:d===18}}
+function buildYearAnchors(k){const {baseAD,day,isDrift}=chingamStartForKYear(k);const starts=[];let s=new Date(baseAD,7,day);starts.push(s);for(let i=1;i<12;i++){const p=starts[i-1];const len=MONTH_LENGTHS[i-1];const n=new Date(p.getFullYear(),p.getMonth(),p.getDate()+len);starts.push(n)}const ends=starts.map((s,i)=>i<11?starts[i+1]:new Date(starts[0].getFullYear()+1,7,chingamStartDayAD(baseAD+1)));return{starts,ends,isDrift}}
+function anchorForDate(d){const y=d.getFullYear();const dThis=chingamStartDayAD(y);const cThis=new Date(y,7,dThis);const k=(d>=cThis)?(y-825):(y-826);const {starts,ends,isDrift}=buildYearAnchors(k);let m=0;for(let i=0;i<12;i++){if(d>=starts[i]&&d<ends[i]){m=i;break}}return{kYear:k,mIndex:m,gStart:starts[m],gEnd:ends[m],isDrift}}
+function getMonthAnchor(k,m){const {starts,ends,isDrift}=buildYearAnchors(k);return{kYear:k,mIndex:m,gStart:starts[m],gEnd:ends[m],isDrift}}
+function shiftMonth(a,dx){let k=a.kYear,m=a.mIndex+dx;while(m<0){m+=12;k-=1}while(m>11){m-=12;k+=1}return getMonthAnchor(k,m)}
+function daysRange(a,b){const out=[];const d=new Date(a.getFullYear(),a.getMonth(),a.getDate());while(d<b){out.push(new Date(d));d.setDate(d.getDate()+1)}return out}
+
+let view=anchorForDate(today)
+
+function renderWeekHead(){const ws=parseInt(S('#weekStart').value,10);const head=S('#weekdayHead');head.innerHTML='';const lab=ML_WEEK.slice(ws).concat(ML_WEEK.slice(0,ws));lab.forEach(t=>{const d=document.createElement('div');d.className="py-2 text-center";d.textContent=t;head.appendChild(d)})}
+
+function render(){
+  const useML=S('#useMalayalamDigits').checked
+  const ws=parseInt(S('#weekStart').value,10)
+  renderWeekHead()
+  S('#mlMonthName').textContent=ML_MONTHS[view.mIndex]
+  S('#mlYear').textContent=' '+(useML?toML(view.kYear):String(view.kYear))
+  S('#gregRange').textContent=fmtEnRange(view.gStart,view.gEnd)
+  S('#subLabel').textContent='Gregorian range: '+fmtEnRange(view.gStart,view.gEnd)
+
+  const days=daysRange(view.gStart,view.gEnd)
+  const first=((view.gStart.getDay()-ws)+7)%7
+  const grid=S('#grid');grid.innerHTML=''
+
+  for(let i=0;i<first;i++){const c=document.createElement('div');c.className="aspect-square rounded-xl border border-dashed border-neutral-200";grid.appendChild(c)}
+
+  days.forEach((gd,idx)=>{
+    const n=idx+1
+    const isToday=sameDate(gd,today)
+    const isCh1=(view.mIndex===0&&n===1)
+    const drift=(isCh1&&view.isDrift)
+
+    const cell=document.createElement('div')
+    cell.className="aspect-square rounded-xl border p-2 relative"
+    if(drift){cell.className+=" border-amber-400 bg-amber-50"}
+    if(isToday){cell.className+=" ring-2 ring-neutral-900"}
+
+    const top=document.createElement('div')
+    top.className="corner-text text-neutral-600 absolute top-1 left-1 right-1 text-center z-10 w-full"
+    top.textContent=ML_MONTHS[view.mIndex]
+
+    const center=document.createElement('div')
+    center.className="absolute inset-0 flex items-center justify-center center-num font-semibold"
+    center.textContent=useML?toML(n):String(n)
+
+    const bottom=document.createElement('div')
+    bottom.className="corner-text text-neutral-600 absolute bottom-1 left-1 right-1 text-center z-10 w-full"
+    bottom.textContent=fmtEnShort(gd)
+
+    cell.appendChild(top);cell.appendChild(center);cell.appendChild(bottom);grid.appendChild(cell)
+  })
+}
+
+S('#prev').onclick=()=>{view=shiftMonth(view,-1);render()}
+S('#next').onclick=()=>{view=shiftMonth(view,1);render()}
+S('#useMalayalamDigits').onchange=render
+S('#weekStart').onchange=render
+
+render();
+
+(function(){
+  const el=document.getElementById('grid'); if(!el) return;
+  let sx=0,sy=0,st=0,active=false,horiz=false;
+  const TH=40,VT=60,MT=800;
+  function start(x,y){sx=x;sy=y;st=performance.now();active=true;horiz=false}
+  function move(x,y,e){if(!active)return;const dx=x-sx,dy=y-sy;if(!horiz&&(Math.abs(dx)>10||Math.abs(dy)>10))horiz=Math.abs(dx)>Math.abs(dy);if(horiz&&e&&e.preventDefault)try{e.preventDefault()}catch{}}
+  function end(x,y){if(!active)return;active=false;const dx=x-sx,dy=y-sy,dt=performance.now()-st;if(horiz&&dt<MT&&Math.abs(dx)>TH&&Math.abs(dy)<VT){(dx<0?S('#next'):S('#prev')).click()}}
+  if(window.PointerEvent){
+    el.addEventListener('pointerdown',e=>{if(!e.isPrimary)return;start(e.clientX,e.clientY)},{passive:false})
+    el.addEventListener('pointermove',e=>{if(!e.isPrimary)return;move(e.clientX,e.clientY,e)},{passive:false})
+    el.addEventListener('pointerup',e=>{if(!e.isPrimary)return;end(e.clientX,e.clientY)},{passive:false})
+    el.addEventListener('pointercancel',()=>{active=false},{passive:false})
+  }else{
+    el.addEventListener('touchstart',e=>{const t=e.changedTouches[0];start(t.clientX,t.clientY)},{passive:false})
+    el.addEventListener('touchmove',e=>{const t=e.changedTouches[0];move(t.clientX,t.clientY,e)},{passive:false})
+    el.addEventListener('touchend',e=>{const t=e.changedTouches[0];end(t.clientX,t.clientY)},{passive:false})
+    el.addEventListener('touchcancel',()=>{active=false},{passive:false})
+  }
+})();
+</script>
+</body></html>
